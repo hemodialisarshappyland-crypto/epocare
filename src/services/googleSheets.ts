@@ -62,11 +62,93 @@ export function getSingleDayFromDate(dateStr: string): SingleHDDay {
 }
 
 /**
- * Menentukan jadwal HD aktif ('Senin - Kamis', 'Selasa - Jumat', 'Rabu - Sabtu')
- * berdasarkan hari kalender real-time saat ini.
+ * Mendapatkan tanggal dan waktu real-time dengan zona waktu Indonesia (WIB / Asia/Jakarta: UTC+7).
+ * Hal ini memastikan bahwa jika aplikasi berjalan di browser atau lingkungan dengan zona waktu UTC/US,
+ * tanggal aktif yang dideteksi sistem selalu tepat dengan kalender di Indonesia (WIB).
  */
-export function getActiveHDDaySchedule(date = new Date()): HDDaySchedule {
-  const day = date.getDay(); // 0 = Minggu, 1 = Senin, 2 = Selasa, 3 = Rabu, 4 = Kamis, 5 = Jumat, 6 = Sabtu
+export function getNowInIndonesianTime(dateInput?: Date): {
+  date: Date;
+  year: number;
+  month: number; // 1-12
+  dateNumber: number; // 1-31
+  dayOfWeek: number; // 0 = Minggu, 1 = Senin, ... 6 = Sabtu
+  dayName: string; // 'Minggu', 'Senin', ...
+  yearMonth: string; // 'YYYY-MM'
+  dateString: string; // 'YYYY-MM-DD'
+  formattedFull: string;
+} {
+  const now = dateInput || new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth() + 1;
+  let dateNumber = now.getDate();
+  let weekdayStr = '';
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      weekday: 'short',
+    });
+    const parts = formatter.formatToParts(now);
+    for (const part of parts) {
+      if (part.type === 'year') year = parseInt(part.value, 10);
+      if (part.type === 'month') month = parseInt(part.value, 10);
+      if (part.type === 'day') dateNumber = parseInt(part.value, 10);
+      if (part.type === 'weekday') weekdayStr = part.value;
+    }
+  } catch {
+    // fallback
+  }
+
+  // Jika perangkat lokal browser sudah berada di tanggal yang lebih baru (misal WITA UTC+8 atau WIT UTC+9)
+  const localDate = now.getDate();
+  const localMonth = now.getMonth() + 1;
+  const localYear = now.getFullYear();
+
+  if (
+    localYear > year ||
+    (localYear === year && localMonth > month) ||
+    (localYear === year && localMonth === month && localDate > dateNumber)
+  ) {
+    year = localYear;
+    month = localMonth;
+    dateNumber = localDate;
+  }
+
+  const calibratedDateObj = new Date(year, month - 1, dateNumber);
+  const dayOfWeek = calibratedDateObj.getDay();
+  const daysIndo = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const dayName = daysIndo[dayOfWeek];
+
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+  const dateString = `${year}-${String(month).padStart(2, '0')}-${String(dateNumber).padStart(2, '0')}`;
+
+  const monthNamesIndo = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+
+  return {
+    date: now,
+    year,
+    month,
+    dateNumber,
+    dayOfWeek,
+    dayName,
+    yearMonth,
+    dateString,
+    formattedFull: `${dayName}, ${dateNumber} ${monthNamesIndo[month - 1]} ${year}`,
+  };
+}
+
+/**
+ * Menentukan jadwal HD aktif ('Senin - Kamis', 'Selasa - Jumat', 'Rabu - Sabtu')
+ * berdasarkan hari kalender real-time saat ini (WIB / Indonesia).
+ */
+export function getActiveHDDaySchedule(date?: Date): HDDaySchedule {
+  const day = date ? date.getDay() : getNowInIndonesianTime().dayOfWeek;
   switch (day) {
     case 1: // Senin
     case 4: // Kamis
@@ -86,9 +168,12 @@ export function getActiveHDDaySchedule(date = new Date()): HDDaySchedule {
 /**
  * Mendapatkan nama hari real-time bahasa Indonesia (Senin s/d Minggu)
  */
-export function getTodayDayName(date = new Date()): string {
-  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-  return days[date.getDay()];
+export function getTodayDayName(date?: Date): string {
+  if (date) {
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    return days[date.getDay()];
+  }
+  return getNowInIndonesianTime().dayName;
 }
 
 /**
@@ -566,6 +651,20 @@ export interface DateDoseInfo {
   };
 }
 
+/**
+ * Mengecek apakah pasien berstatus non-aktif (Meninggal Dunia, Pindah RS, Berhenti HD) pada tanggal tertentu.
+ * Jika statusDate terisi, tindakan sebelum tanggal tersebut tetap aktif sebagai riwayat medis,
+ * sedangkan sesi sesudah statusDate dinonaktifkan secara otomatis.
+ */
+export function isPatientInactiveOnDate(patient: PatientRecord, dateString?: string): boolean {
+  if (!patient.patientStatus || patient.patientStatus === 'Aktif') return false;
+  if (patient.patientStatus === 'Meninggal Dunia' || patient.patientStatus === 'Pindah RS' || patient.patientStatus === 'Berhenti HD') {
+    if (!patient.statusDate) return true;
+    if (dateString && dateString > patient.statusDate) return true;
+  }
+  return false;
+}
+
 export function getDateDoseDisplayInfo(
   patient: PatientRecord,
   dateNumber: number,
@@ -661,6 +760,20 @@ export function getDateDoseDisplayInfo(
         currentStatus: 'Batal',
       };
     }
+  }
+
+  // Jika pasien berstatus non-aktif (Meninggal Dunia / Pindah RS / Berhenti HD) setelah tanggal kejadian
+  if (isPatientInactiveOnDate(patient, dayInfo.dateString)) {
+    return {
+      isHD: false,
+      isHbCheck: false,
+      isPrimary: false,
+      pairedDate: null,
+      cellCode: '-',
+      title: `Pasien Berstatus: ${patient.patientStatus || 'Non-Aktif'}${patient.statusDate ? ` sejak ${patient.statusDate}` : ''}${patient.statusNotes ? ` (${patient.statusNotes})` : ''}`,
+      isCatchUp: false,
+      canTakeAction: false,
+    };
   }
 
   // 2. Cek apakah tanggal ini menerima pengalihan dari penundaan sebelumnya

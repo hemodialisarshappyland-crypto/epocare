@@ -221,7 +221,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="Cetak tabel daftar nama pasien yang diberikan terapi EPO di setiap shift dan setiap harinya"
               >
                 <Syringe className="w-3.5 h-3.5 text-teal-200 shrink-0" />
-                <span>Cetak Jadwal EPO</span>
+                <span>JADWAL EPO</span>
               </button>
             )}
 
@@ -326,6 +326,14 @@ export const Header: React.FC<HeaderProps> = ({
               <div 
                 className="relative h-full flex items-center gap-1.5 px-2 text-xs cursor-pointer hover:bg-rose-900/60 transition"
                 title="Klik untuk memilih bulan & tahun secara langsung"
+                onClick={(e) => {
+                  try {
+                    const inputEl = e.currentTarget.querySelector('input[type="month"]') as HTMLInputElement;
+                    if (inputEl && typeof inputEl.showPicker === 'function') {
+                      inputEl.showPicker();
+                    }
+                  } catch (_) {}
+                }}
               >
                 <Calendar className="w-3.5 h-3.5 text-rose-300 shrink-0" />
                 <span className="text-[11px] font-semibold text-rose-200 hidden sm:inline">Bulan :</span>

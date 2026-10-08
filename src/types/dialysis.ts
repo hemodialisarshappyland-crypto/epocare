@@ -75,12 +75,22 @@ export interface LabSchedule {
   selectiveReason?: string; // Alasan: e.g. "Nilai Hb bulan sebelumnya ≤ 8.9 mg/dL"
 }
 
+export type PatientLifeStatus = 
+  | 'Aktif' 
+  | 'Meninggal Dunia' 
+  | 'Pindah RS' 
+  | 'Rawat Inap' 
+  | 'Berhenti HD';
+
 export interface PatientRecord {
   id: string; // RM or generated UUID
   noRm: string;
   name: string;
   age?: number;
   gender?: 'L' | 'P';
+  patientStatus?: PatientLifeStatus; // Status keaktifan pasien (Aktif, Meninggal Dunia, Pindah RS, Rawat Inap, Berhenti HD)
+  statusDate?: string; // Tanggal kejadian/status (YYYY-MM-DD), e.g. tanggal wafat atau tanggal pindah RS
+  statusNotes?: string; // Keterangan atau alasan status khusus
   hdFrequency?: HDFrequency; // '2 kali dalam satu minggu' | '1 kali dalam satu minggu' | '1 kali / 2 minggu'
   singleDay?: SingleHDDay; // 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu'
   lastHdDate?: string; // Tanggal sesi HD terakhir (YYYY-MM-DD), khusus acuan frekuensi '1 kali / 2 minggu'

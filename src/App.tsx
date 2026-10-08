@@ -45,7 +45,8 @@ import {
   DEFAULT_APPS_SCRIPT_URL,
   OFFICIAL_SPREADSHEET_ID,
   OFFICIAL_SPREADSHEET_URL,
-  isSummaryOrHeaderRow
+  isSummaryOrHeaderRow,
+  getNowInIndonesianTime
 } from './services/googleSheets';
 import { 
   FileSpreadsheet, 
@@ -92,9 +93,8 @@ export const ensureUniquePatientIds = (patientList: PatientRecord[]): PatientRec
 };
 
 export default function App() {
-  // Current Month: format YYYY-MM
-  const now = new Date();
-  const currentRealMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // Current Month: format YYYY-MM (Kalender Indonesia WIB)
+  const currentRealMonth = getNowInIndonesianTime().yearMonth;
   const defaultMonth = currentRealMonth;
   const [selectedMonth, setSelectedMonth] = useState<string>(defaultMonth);
   const isPastMonth = selectedMonth < currentRealMonth;
@@ -827,6 +827,9 @@ export default function App() {
                     singleDay: patientData.singleDay !== undefined ? patientData.singleDay : p.singleDay,
                     lastHdDate: patientData.lastHdDate !== undefined ? patientData.lastHdDate : p.lastHdDate,
                     doctorInCharge: patientData.doctorInCharge !== undefined ? patientData.doctorInCharge : p.doctorInCharge,
+                    patientStatus: patientData.patientStatus !== undefined ? patientData.patientStatus : p.patientStatus,
+                    statusDate: patientData.statusDate !== undefined ? patientData.statusDate : p.statusDate,
+                    statusNotes: patientData.statusNotes !== undefined ? patientData.statusNotes : p.statusNotes,
                     updatedAt: new Date().toISOString(),
                   };
                 });
@@ -859,6 +862,9 @@ export default function App() {
         name: patientData.name || 'Pasien Baru',
         age: patientData.age,
         gender: patientData.gender || 'L',
+        patientStatus: patientData.patientStatus || 'Aktif',
+        statusDate: patientData.statusDate,
+        statusNotes: patientData.statusNotes,
         hdFrequency: patientData.hdFrequency || '2 kali dalam satu minggu',
         singleDay: patientData.singleDay,
         lastHdDate: patientData.lastHdDate,

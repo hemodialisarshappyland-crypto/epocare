@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   X, 
   Printer, 
@@ -16,7 +16,8 @@ import { PatientRecord } from '../types/dialysis';
 import { 
   getMonthDaysInfo, 
   getDateDoseDisplayInfo, 
-  DateDoseInfo
+  DateDoseInfo,
+  getNowInIndonesianTime
 } from '../services/googleSheets';
 
 interface EpoSchedulePrintModalProps {
@@ -42,8 +43,6 @@ export const EpoSchedulePrintModal: React.FC<EpoSchedulePrintModalProps> = ({
   patients,
   selectedMonth,
 }) => {
-  if (!isOpen) return null;
-
   // View mode: 'SINGLE_DAY' (Satu Tanggal Sesuai Gambar) | 'ALL_DAYS' (Semua Hari di Bulan Ini)
   const [viewMode, setViewMode] = useState<'SINGLE_DAY' | 'ALL_DAYS'>('SINGLE_DAY');
 
@@ -132,13 +131,56 @@ export const EpoSchedulePrintModal: React.FC<EpoSchedulePrintModalProps> = ({
     return daysData.filter((d) => d.totalEpo > 0);
   }, [daysData]);
 
-  // Tanggal aktif untuk mode SINGLE_DAY (default: hari ini atau hari pertama yang memiliki pasien EPO)
-  const [selectedDateNumber, setSelectedDateNumber] = useState<number>(() => {
-    const today = new Date().getDate();
-    const hasToday = activeEpoDays.some((d) => d.dateNumber === today);
-    if (hasToday) return today;
+  // Informasi hari real-time saat ini dengan kalender Indonesia (WIB)
+  const isCurrentMonthActive = useMemo(() => {
+    const [y, m] = selectedMonth.split('-');
+    const nowWib = getNowInIndonesianTime();
+    return nowWib.year === parseInt(y, 10) && nowWib.month === parseInt(m, 10);
+  }, [selectedMonth]);
+
+  // Fungsi kalkulasi hari aktif otomatis:
+  // 1. Jika di bulan berjalan: pilih tanggal hari ini (WIB) jika ada pasien, atau hari aktif terdekat jika hari libur
+  // 2. Jika di bulan lain: pilih hari pertama yang memiliki pasien EPO
+  const getCalculatedActiveDateNumber = (): number => {
+    const nowWib = getNowInIndonesianTime();
+    const todayDateNumber = nowWib.dateNumber;
+
+    if (isCurrentMonthActive) {
+      // Prioritaskan tanggal hari ini jika ada pasien EPO
+      const hasTodayWithEpo = activeEpoDays.some((d) => d.dateNumber === todayDateNumber);
+      if (hasTodayWithEpo) {
+        return todayDateNumber;
+      }
+
+      // Jika hari ini libur (misal Minggu) atau belum ada pasien hari ini,
+      // cari hari di activeEpoDays yang paling dekat dengan hari ini
+      if (activeEpoDays.length > 0) {
+        const closestDay = activeEpoDays.reduce((prev, curr) => {
+          return Math.abs(curr.dateNumber - todayDateNumber) < Math.abs(prev.dateNumber - todayDateNumber) ? curr : prev;
+        });
+        return closestDay.dateNumber;
+      }
+
+      // Fallback ke tanggal hari ini
+      return todayDateNumber;
+    }
+
+    // Jika membuka bulan lain, ambil hari pertama yang memiliki pasien EPO, atau tanggal 1
     return activeEpoDays[0]?.dateNumber || 1;
+  };
+
+  // Tanggal aktif untuk mode SINGLE_DAY (otomatis hari aktif)
+  const [selectedDateNumber, setSelectedDateNumber] = useState<number>(() => {
+    return getCalculatedActiveDateNumber();
   });
+
+  // Otomatis menampilkan hari aktif setiap kali modal dibuka atau saat bulan berganti
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedDateNumber(getCalculatedActiveDateNumber());
+      setViewMode('SINGLE_DAY');
+    }
+  }, [isOpen, selectedMonth, activeEpoDays, isCurrentMonthActive]);
 
   // Data hari yang dipilih
   const currentDayData = useMemo(() => {
@@ -626,6 +668,8 @@ export const EpoSchedulePrintModal: React.FC<EpoSchedulePrintModalProps> = ({
     );
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="print-modal-container fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs print:p-0 print:bg-white print:static print:z-auto">
       <div className="print-modal-card bg-white dark:bg-slate-900 rounded-xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-1 flex flex-col max-h-[92vh] print:max-h-none print:h-auto print:overflow-visible print:border-none print:shadow-none print:m-0 print:w-full">
@@ -644,7 +688,7 @@ export const EpoSchedulePrintModal: React.FC<EpoSchedulePrintModalProps> = ({
                   Cetak Tabel Jadwal Pemberian EPO (Format Minimalis)
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Format tabel minimalis per shift (Pagi & Siang) sesuai formulir kerja harian HD
+                  Format tabel minimalis per shift (Pagi & Siang) • Hari Aktif: <strong className="text-teal-700 dark:text-teal-300 font-semibold">{getNowInIndonesianTime().formattedFull}</strong>
                 </p>
               </div>
             </div>
@@ -728,39 +772,57 @@ export const EpoSchedulePrintModal: React.FC<EpoSchedulePrintModalProps> = ({
 
             {/* Pilihan Tanggal Aktif (Mode SINGLE_DAY) */}
             {viewMode === 'SINGLE_DAY' && (
-              <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700 shadow-2xs">
-                <button
-                  type="button"
-                  onClick={handlePrevDay}
-                  title="Hari Sebelumnya"
-                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-
-                <div className="flex items-center gap-1.5 px-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
-                  <Calendar className="w-3.5 h-3.5 text-teal-600" />
-                  <select
-                    value={selectedDateNumber}
-                    onChange={(e) => setSelectedDateNumber(parseInt(e.target.value, 10))}
-                    className="bg-transparent font-bold text-xs text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={handlePrevDay}
+                    title="Hari Sebelumnya"
+                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-600 dark:text-slate-300 transition cursor-pointer"
                   >
-                    {daysData.map((d) => (
-                      <option key={d.dateNumber} value={d.dateNumber} className="dark:bg-slate-900">
-                        {d.fullDateTitle} {d.totalEpo > 0 ? `(${d.totalEpo} Pasien)` : '(Kosong)'}
-                      </option>
-                    ))}
-                  </select>
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="flex items-center gap-1.5 px-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                    <Calendar className="w-3.5 h-3.5 text-teal-600" />
+                    <select
+                      value={selectedDateNumber}
+                      onChange={(e) => setSelectedDateNumber(parseInt(e.target.value, 10))}
+                      className="bg-transparent font-bold text-xs text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+                    >
+                      {daysData.map((d) => {
+                        const isActiveDay = d.dateNumber === getCalculatedActiveDateNumber();
+                        return (
+                          <option key={d.dateNumber} value={d.dateNumber} className="dark:bg-slate-900">
+                            {isActiveDay ? '⭐ ' : ''}{d.fullDateTitle} {isActiveDay ? '• HARI AKTIF ' : ''}{d.totalEpo > 0 ? `(${d.totalEpo} Pasien)` : '(Kosong)'}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleNextDay}
+                    title="Hari Selanjutnya"
+                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-600 dark:text-slate-300 transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleNextDay}
-                  title="Hari Selanjutnya"
-                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                {/* Tombol Pintas Hari Aktif */}
+                {selectedDateNumber !== getCalculatedActiveDateNumber() && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDateNumber(getCalculatedActiveDateNumber())}
+                    className="h-7 px-2.5 rounded-lg text-[11px] font-bold bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900 border border-teal-300 dark:border-teal-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                    title="Kembali ke hari aktif otomatis"
+                  >
+                    <span>⭐</span>
+                    <span>Kembali ke Hari Aktif</span>
+                  </button>
+                )}
               </div>
             )}
 

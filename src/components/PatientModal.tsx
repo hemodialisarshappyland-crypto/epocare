@@ -12,11 +12,12 @@ import {
   Info,
   Repeat,
   FlaskConical,
-  Sparkles
+  Sparkles,
+  HeartPulse
 } from 'lucide-react';
-import { PatientRecord, HDDaySchedule, HDShift, HDFrequency, SingleHDDay, LabSchedule, LabTestType, LabScheduleStatus } from '../types/dialysis';
+import { PatientRecord, HDDaySchedule, HDShift, HDFrequency, SingleHDDay, LabSchedule, LabTestType, LabScheduleStatus, PatientLifeStatus } from '../types/dialysis';
 import { calculateClinicalRecommendation, generateDefaultWeeks } from '../services/clinicalRules';
-import { getScheduleDayFromSingleDay, getFirstHDDateOfMonth, getSingleDayFromDate } from '../services/googleSheets';
+import { getScheduleDayFromSingleDay, getFirstHDDateOfMonth, getSingleDayFromDate, getNowInIndonesianTime } from '../services/googleSheets';
 
 interface PatientModalProps {
   isOpen: boolean;
@@ -37,6 +38,9 @@ export const PatientModal: React.FC<PatientModalProps> = ({
   const [name, setName] = useState('');
   const [age, setAge] = useState<string>('');
   const [gender, setGender] = useState<'L' | 'P'>('L');
+  const [patientStatus, setPatientStatus] = useState<PatientLifeStatus>('Aktif');
+  const [statusDate, setStatusDate] = useState<string>('');
+  const [statusNotes, setStatusNotes] = useState<string>('');
   const [hdFrequency, setHdFrequency] = useState<HDFrequency>('2 kali dalam satu minggu');
   const [singleDay, setSingleDay] = useState<SingleHDDay>('Senin');
   const [lastHdDate, setLastHdDate] = useState<string>('');
@@ -67,6 +71,9 @@ export const PatientModal: React.FC<PatientModalProps> = ({
       setName(initialPatient.name);
       setAge(initialPatient.age ? String(initialPatient.age) : '');
       setGender(initialPatient.gender || 'L');
+      setPatientStatus(initialPatient.patientStatus || 'Aktif');
+      setStatusDate(initialPatient.statusDate || '');
+      setStatusNotes(initialPatient.statusNotes || '');
       setHdFrequency(initialPatient.hdFrequency || '2 kali dalam satu minggu');
       const detectedSingleDay = initialPatient.singleDay || (
         initialPatient.scheduleDay === 'Selasa - Jumat' ? 'Selasa' :
@@ -104,6 +111,9 @@ export const PatientModal: React.FC<PatientModalProps> = ({
       setName('');
       setAge('');
       setGender('L');
+      setPatientStatus('Aktif');
+      setStatusDate('');
+      setStatusNotes('');
       setHdFrequency('2 kali dalam satu minggu');
       setSingleDay('Senin');
       setLastHdDate('');
@@ -231,6 +241,9 @@ export const PatientModal: React.FC<PatientModalProps> = ({
       name: name.trim(),
       age: age ? parseInt(age, 10) : undefined,
       gender,
+      patientStatus,
+      statusDate: patientStatus !== 'Aktif' ? (statusDate || getNowInIndonesianTime().dateString) : undefined,
+      statusNotes: patientStatus !== 'Aktif' ? statusNotes.trim() : undefined,
       hdFrequency,
       singleDay: isSingleOrBiweekly ? singleDay : undefined,
       lastHdDate: hdFrequency === '1 kali / 2 minggu' ? (lastHdDate || defaultHbDate) : undefined,
@@ -382,6 +395,120 @@ export const PatientModal: React.FC<PatientModalProps> = ({
                   className="w-full px-1.5 py-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-[11px] focus:outline-hidden"
                 />
               </div>
+            </div>
+
+            {/* Status Keaktifan Pasien (Khusus: Aktif, Meninggal Dunia, Pindah RS, Rawat Inap, Berhenti) */}
+            <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <HeartPulse className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Status Keaktifan Pasien:</span>
+                </label>
+                <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
+                  patientStatus === 'Meninggal Dunia'
+                    ? 'bg-slate-800 text-white'
+                    : patientStatus === 'Pindah RS'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950 dark:text-amber-200'
+                    : patientStatus === 'Rawat Inap'
+                    ? 'bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-950 dark:text-purple-200'
+                    : patientStatus === 'Berhenti HD'
+                    ? 'bg-rose-100 text-rose-900 border border-rose-300 dark:bg-rose-950 dark:text-rose-200'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200'
+                }`}>
+                  {patientStatus}
+                </span>
+              </div>
+
+              {/* Tombol Pilihan Status */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {[
+                  { key: 'Aktif', label: 'Aktif Rutin HD', icon: '🟢', desc: 'Jadwal berjalan normal' },
+                  { key: 'Meninggal Dunia', label: 'Meninggal Dunia', icon: '⬛', desc: 'Riwayat medis aman' },
+                  { key: 'Pindah RS', label: 'Pindah RS', icon: '🚗', desc: 'Rujuk / pindah faskes' },
+                  { key: 'Rawat Inap', label: 'Rawat Inap', icon: '🏥', desc: 'On-hold sementara' },
+                  { key: 'Berhenti HD', label: 'Berhenti / Cuti', icon: '⏸️', desc: 'Istirahat / stop HD' },
+                ].map((opt) => {
+                  const isSelected = patientStatus === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => {
+                        setPatientStatus(opt.key as PatientLifeStatus);
+                        if (opt.key !== 'Aktif' && !statusDate) {
+                          setStatusDate(getNowInIndonesianTime().dateString);
+                        }
+                      }}
+                      className={`p-1.5 rounded-lg text-left transition border cursor-pointer ${
+                        isSelected
+                          ? opt.key === 'Meninggal Dunia'
+                            ? 'bg-slate-900 text-white border-slate-950 ring-1 ring-slate-700 shadow-xs'
+                            : opt.key === 'Pindah RS'
+                            ? 'bg-amber-600 text-white border-amber-700 ring-1 ring-amber-400 shadow-xs'
+                            : opt.key === 'Rawat Inap'
+                            ? 'bg-purple-600 text-white border-purple-700 ring-1 ring-purple-400 shadow-xs'
+                            : opt.key === 'Berhenti HD'
+                            ? 'bg-rose-600 text-white border-rose-700 ring-1 ring-rose-400 shadow-xs'
+                            : 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-400 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 font-bold text-[10.5px]">
+                        <span>{opt.icon}</span>
+                        <span className="truncate">{opt.label}</span>
+                      </div>
+                      <p className={`text-[8.5px] truncate mt-0.5 ${isSelected ? 'text-white/90' : 'text-slate-500'}`}>
+                        {opt.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Form Tambahan jika status NON-AKTIF */}
+              {patientStatus !== 'Aktif' && (
+                <div className="p-2 rounded-lg bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 space-y-2 mt-1">
+                  <div className="flex items-start gap-1.5 text-[9.5px] text-amber-800 dark:text-amber-200">
+                    <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      <strong>Penting:</strong> Data riwayat pemberian EPO &amp; tindakan cuci darah sebelum tanggal kejadian tetap tersimpan utuh di rekam medis. Sesi setelah tanggal ini otomatis di-hold.
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[9.5px] font-semibold text-slate-700 dark:text-slate-300 mb-0.5">
+                        {patientStatus === 'Meninggal Dunia' ? 'Tanggal Wafat / Meninggal:' : patientStatus === 'Pindah RS' ? 'Tanggal Pindah RS:' : 'Tanggal Berlaku Status:'}
+                      </label>
+                      <input
+                        type="date"
+                        value={statusDate}
+                        onChange={(e) => setStatusDate(e.target.value)}
+                        className="w-full px-2 py-1 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold focus:outline-hidden"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[9.5px] font-semibold text-slate-700 dark:text-slate-300 mb-0.5">
+                        {patientStatus === 'Meninggal Dunia' ? 'Tempat / Keterangan Wafat:' : patientStatus === 'Pindah RS' ? 'RS Tujuan / Catatan Rujukan:' : 'Keterangan Alasan:'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={
+                          patientStatus === 'Meninggal Dunia'
+                            ? 'Contoh: Wafat di IGD RS / di rumah'
+                            : patientStatus === 'Pindah RS'
+                            ? 'Contoh: Pindah ke RSUP Dr. Sardjito'
+                            : 'Contoh: Ruang Ranap Melati / istirahat'
+                        }
+                        value={statusNotes}
+                        onChange={(e) => setStatusNotes(e.target.value)}
+                        className="w-full px-2 py-1 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Frekuensi & Hari Rutin HD */}
