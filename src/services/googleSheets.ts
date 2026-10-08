@@ -1352,13 +1352,28 @@ export function buildScheduleMatrixTable(
     grandRealisasiEpo += patientEpoGiven;
     grandTotalPrc += reco.transfusionBags;
 
+    const statusText = patient.patientStatus && patient.patientStatus !== 'Aktif'
+      ? patient.patientStatus
+      : patient.overallStatus;
+
+    let finalNotes = patient.clinicalNotes || '';
+    if (patient.patientStatus && patient.patientStatus !== 'Aktif') {
+      const statusNoteText = patient.statusNotes ? ` (${patient.statusNotes})` : '';
+      const dateText = patient.statusDate ? ` per ${patient.statusDate}` : '';
+      if (!finalNotes.includes(patient.patientStatus)) {
+        finalNotes = finalNotes 
+          ? `[${patient.patientStatus}${dateText}${statusNoteText}] ${finalNotes}`
+          : `[${patient.patientStatus}${dateText}${statusNoteText}]`;
+      }
+    }
+
     row.push(
       String(targetEpo),
       String(patientEpoGiven),
       `${patientEpoGiven} : ${targetEpo}`,
       String(reco.transfusionBags > 0 ? reco.transfusionBags : '-'),
-      patient.overallStatus,
-      patient.clinicalNotes || ''
+      statusText,
+      finalNotes
     );
 
     return row;
@@ -2034,8 +2049,25 @@ async function readSingleSheetData(
     const statusColIndex = row.length - 2;
     const overallStatusRaw = (row[statusColIndex] || '').trim();
     let overallStatus: PatientRecord['overallStatus'] = 'Berjalan';
-    if (overallStatusRaw.includes('Selesai')) overallStatus = 'Selesai';
-    else if (overallStatusRaw.includes('Perhatian') || reco.category === 'TRANSFUSI_2_RAWAT_INAP') overallStatus = 'Perlu Perhatian';
+    let patientStatus: PatientRecord['patientStatus'] = 'Aktif';
+
+    if (overallStatusRaw.includes('Meninggal')) {
+      patientStatus = 'Meninggal Dunia';
+      overallStatus = 'Selesai';
+    } else if (overallStatusRaw.includes('Pindah')) {
+      patientStatus = 'Pindah RS';
+      overallStatus = 'Selesai';
+    } else if (overallStatusRaw.includes('Rawat Inap')) {
+      patientStatus = 'Rawat Inap';
+      overallStatus = 'Perlu Perhatian';
+    } else if (overallStatusRaw.includes('Berhenti')) {
+      patientStatus = 'Berhenti HD';
+      overallStatus = 'Selesai';
+    } else if (overallStatusRaw.includes('Selesai')) {
+      overallStatus = 'Selesai';
+    } else if (overallStatusRaw.includes('Perhatian') || reco.category === 'TRANSFUSI_2_RAWAT_INAP') {
+      overallStatus = 'Perlu Perhatian';
+    }
 
     const notes = row[row.length - 1] || '';
 
@@ -2046,6 +2078,7 @@ async function readSingleSheetData(
       id: `sheet-${tabName.toLowerCase()}-${cleanNoRm}-${uniqueSuffix}`,
       noRm: noRm || `RM-${1000 + i}`,
       name,
+      patientStatus,
       hdFrequency,
       singleDay,
       scheduleDay,
@@ -2552,6 +2585,11 @@ export function buildNextMonthLabScheduleTable(
   // Jika PILIHAN: Hanya pasien dengan Hb < 9.0 mg/dL yang masuk tabel
   // Jika SELURUH: Seluruh pasien masuk tabel
   const targetPatients = patients.filter((p) => {
+    // Pasien non-aktif (Meninggal Dunia, Pindah RS, Berhenti HD) tidak dijadwalkan bulan berikutnya
+    if (p.patientStatus === 'Meninggal Dunia' || p.patientStatus === 'Pindah RS' || p.patientStatus === 'Berhenti HD') {
+      return false;
+    }
+
     const sched = p.labSchedule;
     if (effectiveScope === 'PILIHAN') {
       if (sched && (sched.status === 'Tidak Ada Jadwal' || sched.status === 'Ditunda')) {
@@ -2699,6 +2737,11 @@ export function buildNextMonthCalendarMatrix(
 
   operatingDays.forEach((d) => {
     const onThisDay = patients.filter((p) => {
+      // Pasien non-aktif (Meninggal Dunia, Pindah RS, Berhenti HD) tidak dijadwalkan di matriks kalender bulan depan
+      if (p.patientStatus === 'Meninggal Dunia' || p.patientStatus === 'Pindah RS' || p.patientStatus === 'Berhenti HD') {
+        return false;
+      }
+
       const sched = p.labSchedule;
 
       if (effectiveScope === 'PILIHAN') {
@@ -2919,8 +2962,15 @@ function doPost(e) {
               rowFw.push("bold");
             }
           } else {
+            var statusVal = (rows[r][numCols - 2] || "").toString();
+            var isMeninggal = statusVal.indexOf("Meninggal") !== -1;
+            var isPindah = statusVal.indexOf("Pindah") !== -1;
+            var isBerhenti = statusVal.indexOf("Berhenti") !== -1;
+            var isRawatInap = statusVal.indexOf("Rawat Inap") !== -1;
+            var patientRowColor = isMeninggal ? "#f1f5f9" : (isPindah || isBerhenti ? "#fffbeb" : (isRawatInap ? "#faf5ff" : "#ffffff"));
+
             for (var c = 0; c < numCols; c++) {
-              rowBg.push("#ffffff");
+              rowBg.push(patientRowColor);
               rowFw.push("normal");
             }
           }
